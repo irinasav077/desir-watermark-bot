@@ -9,6 +9,7 @@ TOKEN = os.getenv("BOT_TOKEN")
 WATERMARK_TEXT = "DESIR\n-edit-"
 
 media_groups = {}
+processing_groups = set()
 
 
 def add_watermark(input_path, output_path):
@@ -69,29 +70,15 @@ async def process_single_photo(update: Update, context: ContextTypes.DEFAULT_TYP
     os.remove(output_file)
 
 
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    media_group_id = update.message.media_group_id
-
-    if not media_group_id:
-        await process_single_photo(update, context)
-        return
-
-    if media_group_id not in media_groups:
-        media_groups[media_group_id] = []
-
-    media_groups[media_group_id].append(update.message)
-
-    await asyncio.sleep(2)
+async def process_album(media_group_id, context):
+    await asyncio.sleep(3)
 
     if media_group_id not in media_groups:
         return
 
     messages = media_groups[media_group_id]
 
-    if messages[0].message_id != update.message.message_id:
-        return
-
-    messages.sort(key=lambda m: m.message_id)
+    messages.sort(key=lambda x: x.message_id)
 
     media = []
     opened_files = []
@@ -109,14 +96,15 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             add_watermark(input_file, output_file)
 
-            temp_files.extend([input_file, output_file])
+            temp_files.append(input_file)
+            temp_files.append(output_file)
 
-            photo_file = open(output_file, "rb")
-            opened_files.append(photo_file)
+            f = open(output_file, "rb")
+            opened_files.append(f)
 
-            media.append(InputMediaPhoto(photo_file))
+            media.append(InputMediaPhoto(media=f))
 
-        await update.message.reply_media_group(media=media)
+        await messages[0].reply_media_group(media)
 
     finally:
         for f in opened_files:
@@ -126,8 +114,27 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if os.path.exists(file_name):
                 os.remove(file_name)
 
-        if media_group_id in media_groups:
-            del media_groups[media_group_id]
+        media_groups.pop(media_group_id, None)
+        processing_groups.discard(media_group_id)
+
+
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    media_group_id = update.message.media_group_id
+
+    if not media_group_id:
+        await process_single_photo(update, context)
+        return
+
+    if media_group_id not in media_groups:
+        media_groups[media_group_id] = []
+
+    media_groups[media_group_id].append(update.message)
+
+    if media_group_id not in processing_groups:
+        processing_groups.add(media_group_id)
+        asyncio.create_task(
+            process_album(media_group_id, context)
+        )
 
 
 def main():
@@ -142,4 +149,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
