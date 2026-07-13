@@ -1,11 +1,14 @@
 import os
+import asyncio
 from PIL import Image, ImageDraw, ImageFont
-from telegram import Update
+from telegram import Update, InputMediaPhoto
 from telegram.ext import Application, MessageHandler, ContextTypes, filters
 
 TOKEN = os.getenv("BOT_TOKEN")
 
 WATERMARK_TEXT = "DESIR\n-edit-"
+
+media_groups = {}
 
 
 def add_watermark(input_path, output_path):
@@ -48,7 +51,7 @@ def add_watermark(input_path, output_path):
     result.convert("RGB").save(output_path, quality=95)
 
 
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def process_single_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     photo = update.message.photo[-1]
 
     input_file = f"{photo.file_id}.jpg"
@@ -66,6 +69,67 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     os.remove(output_file)
 
 
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    media_group_id = update.message.media_group_id
+
+    if not media_group_id:
+        await process_single_photo(update, context)
+        return
+
+    if media_group_id not in media_groups:
+        media_groups[media_group_id] = []
+
+    media_groups[media_group_id].append(update.message)
+
+    await asyncio.sleep(2)
+
+    if media_group_id not in media_groups:
+        return
+
+    messages = media_groups[media_group_id]
+
+    if messages[0].message_id != update.message.message_id:
+        return
+
+    messages.sort(key=lambda m: m.message_id)
+
+    media = []
+    opened_files = []
+    temp_files = []
+
+    try:
+        for msg in messages:
+            photo = msg.photo[-1]
+
+            input_file = f"{photo.file_id}.jpg"
+            output_file = f"watermarked_{photo.file_id}.jpg"
+
+            file = await context.bot.get_file(photo.file_id)
+            await file.download_to_drive(input_file)
+
+            add_watermark(input_file, output_file)
+
+            temp_files.extend([input_file, output_file])
+
+            photo_file = open(output_file, "rb")
+            opened_files.append(photo_file)
+
+            media.append(InputMediaPhoto(photo_file))
+
+        await update.message.reply_media_group(media=media)
+
+    finally:
+        for f in opened_files:
+            f.close()
+
+        for file_name in temp_files:
+            if os.path.exists(file_name):
+                os.remove(file_name)
+
+        if media_group_id in media_groups:
+            del media_groups[media_group_id]
+
+
 def main():
     app = Application.builder().token(TOKEN).build()
 
@@ -77,4 +141,5 @@ def main():
 
 
 if __name__ == "__main__":
+    main()
     main()
