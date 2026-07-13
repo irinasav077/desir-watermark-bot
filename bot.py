@@ -16,7 +16,7 @@ def add_watermark(input_path, output_path):
 
     width, height = image.size
 
-    font_size = int(min(width, height) * 0.22)
+    font_size = int(min(width, height) * 0.35)
 
     try:
         font = ImageFont.truetype("arial.ttf", font_size)
