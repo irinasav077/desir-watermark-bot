@@ -20,7 +20,7 @@ def add_watermark(input_path, output_path):
 
     width, height = image.size
 
-    font_size = int(min(width, height) * 0.08)
+    font_size = int(min(width, height) * 0.06)
 
     try:
         font = ImageFont.truetype("Mont-Light.ttf", font_size)
